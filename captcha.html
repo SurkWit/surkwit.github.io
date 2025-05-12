@@ -13,17 +13,21 @@
     <div class="container">
         <h1>Проверка безопасности</h1>
         <p>Для продолжения общения в чате, пожалуйста, пройдите проверку ниже</p>
-        <div id="captcha-container" style="display: none;">
-            <div class="g-recaptcha" data-sitekey="6LdScDcrAAAAAKqDN9uAhjozK-QIBIxVeoHeNcpa" data-callback="onSubmit"></div>
-        </div>
         <div id="error-message" style="color: red; margin-top: 10px; display: none;"></div>
         <div id="loading" style="display: block; margin-top: 10px;">
             Пожалуйста, подождите, проверяем ваш регион...
         </div>
     </div>
+    
     <script>
         var WebApp = window.Telegram.WebApp;
         var ip;
+        
+        // Получение IP адреса
+        $.getJSON('https://api.ipify.org?format=jsonp&callback=?', function(data) {
+            ip = data.ip;
+            checkRegion(ip);
+        });
         
         function showError(message) {
             document.getElementById('error-message').textContent = message;
@@ -33,90 +37,14 @@
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
         }
-
-        function showCaptcha(show) {
-            document.getElementById('captcha-container').style.display = show ? 'block' : 'none';
-        }
-
-        // Get verification token from URL
-        function getVerificationToken() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const token = urlParams.get('token');
-            if (!token) {
-                console.warn('Токен верификации не найден в URL, используется режим обратной совместимости');
-                return 'default_token'; // Возвращаем токен по умолчанию вместо null
-            }
-            return token;
-        }
         
-        function isRussianIP(ipAddress) {
-            return new Promise((resolve, reject) => {
-                // Используем прокси-сервер для обхода CORS
-                fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://whatismyipaddress.com/ip/${ipAddress}`)}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        // Извлекаем содержимое страницы
-                        const pageContent = data.contents;
-                        
-                        // Ищем информацию о стране в HTML
-                        if (pageContent.includes('<span>Country:</span><span>Russia</span>') || 
-                            pageContent.includes('<span>Country:</span><span>Russian Federation</span>')) {
-                            resolve(true);
-                        } else {
-                            resolve(false);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error checking IP:', error);
-                        // Используем резервный API при ошибке
-                        $.getJSON('https://ipapi.co/' + ipAddress + '/json/', function(backupData) {
-                            if (backupData.error) {
-                                reject(new Error(backupData.error));
-                                return;
-                            }
-                            resolve(backupData.country_code === 'RU');
-                        }).fail(function(backupJqXHR, backupTextStatus, backupError) {
-                            reject(new Error('Не удалось проверить регион: ' + error));
-                        });
-                    });
-            });
-        }
-
-        // Get IP address
-        function getIpAddress() {
-            return new Promise((resolve, reject) => {
-                // Используем XML HTTP Request для обхода ограничений
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', 'https://api.ipify.org', true);
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        resolve(xhr.responseText.trim());
-                    } else {
-                        reject(new Error('Не удалось получить IP адрес'));
-                    }
-                };
-                xhr.onerror = function() {
-                    // Резервный метод получения IP
-                    $.getJSON('https://api.db-ip.com/v2/free/self', function(backupData) {
-                        resolve(backupData.ipAddress);
-                    }).fail(function() {
-                        reject(new Error('Не удалось определить IP адрес'));
-                    });
-                };
-                xhr.send();
-            });
-        }
-
-        // Функция проверки IP и региона
-        async function checkRegion() {
-            try {
-                ip = await getIpAddress();
-                const isRussian = await isRussianIP(ip);
-                
-                if (isRussian) {
+        // Проверка российского IP
+        function checkRegion(ipAddress) {
+            $.getJSON('https://ipapi.co/' + ipAddress + '/json/', function(data) {
+                if (data.country_code === 'RU') {
                     // Если IP российский, показываем капчу
                     showLoading(false);
-                    showCaptcha(true);
+                    showCaptcha();
                 } else {
                     // Если IP не российский, показываем сообщение об ошибке
                     showLoading(false);
@@ -125,40 +53,38 @@
                         WebApp.close();
                     }, 3000);
                 }
-            } catch (error) {
-                console.error('Ошибка при проверке IP:', error);
+            }).fail(function() {
                 showLoading(false);
-                showError('Произошла ошибка при проверке региона: ' + error.message);
+                showError('Не удалось проверить регион');
+            });
+        }
+        
+        // Показать капчу
+        function showCaptcha() {
+            // Создаем контейнер для капчи
+            var captchaDiv = document.createElement('div');
+            captchaDiv.className = 'g-recaptcha';
+            captchaDiv.setAttribute('data-sitekey', '6LdScDcrAAAAAKqDN9uAhjozK-QIBIxVeoHeNcpa');
+            captchaDiv.setAttribute('data-callback', 'onSubmit');
+            
+            // Добавляем в контейнер
+            document.querySelector('.container').appendChild(captchaDiv);
+            
+            // Перерендериваем капчу
+            if (typeof grecaptcha !== 'undefined') {
+                grecaptcha.render(captchaDiv);
             }
         }
-
+        
         WebApp.expand();
         
-        // Запускаем проверку IP при загрузке страницы
-        window.onload = checkRegion;
-        
-        async function onSubmit(token) {
-            if (!token) {
-                showError('Пожалуйста, пройдите капчу');
-                return;
+        // Функция обратного вызова для капчи
+        function onSubmit(token) {
+            if (token) {
+                setTimeout(() => { 
+                    WebApp.sendData('success|' + ip + '|' + navigator.userAgent); 
+                }, 3000);
             }
-
-            const verificationToken = getVerificationToken();
-            if (!verificationToken) {
-                return;
-            }
-
-            if (!ip) {
-                showError('Не удалось определить IP адрес');
-                return;
-            }
-
-            showLoading(true);
-            showError('');
-
-            // Отправляем данные в Telegram
-            WebApp.sendData(`success_${verificationToken}_${ip}_${navigator.userAgent}`);
-            showLoading(false);
         }
     </script>
 </body>
