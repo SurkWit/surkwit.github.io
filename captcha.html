@@ -13,10 +13,12 @@
     <div class="container">
         <h1>Проверка безопасности</h1>
         <p>Для продолжения общения в чате, пожалуйста, пройдите проверку ниже</p>
-        <div class="g-recaptcha" data-sitekey="6LdScDcrAAAAAKqDN9uAhjozK-QIBIxVeoHeNcpa" data-callback="onSubmit"></div>
+        <div id="captcha-container" style="display: none;">
+            <div class="g-recaptcha" data-sitekey="6LdScDcrAAAAAKqDN9uAhjozK-QIBIxVeoHeNcpa" data-callback="onSubmit"></div>
+        </div>
         <div id="error-message" style="color: red; margin-top: 10px; display: none;"></div>
-        <div id="loading" style="display: none; margin-top: 10px;">
-            Пожалуйста, подождите...
+        <div id="loading" style="display: block; margin-top: 10px;">
+            Пожалуйста, подождите, проверяем ваш регион...
         </div>
     </div>
     <script>
@@ -32,13 +34,17 @@
             document.getElementById('loading').style.display = show ? 'block' : 'none';
         }
 
+        function showCaptcha(show) {
+            document.getElementById('captcha-container').style.display = show ? 'block' : 'none';
+        }
+
         // Get verification token from URL
         function getVerificationToken() {
             const urlParams = new URLSearchParams(window.location.search);
             const token = urlParams.get('token');
             if (!token) {
-                showError('Ошибка: отсутствует токен верификации');
-                return null;
+                console.warn('Токен верификации не найден в URL, используется режим обратной совместимости');
+                return 'default_token'; // Возвращаем токен по умолчанию вместо null
             }
             return token;
         }
@@ -101,16 +107,35 @@
             });
         }
 
-        // Инициализируем получение IP адреса
-        getIpAddress()
-            .then(ipAddress => {
-                ip = ipAddress;
-            })
-            .catch(error => {
-                showError(error.message);
-            });
+        // Функция проверки IP и региона
+        async function checkRegion() {
+            try {
+                ip = await getIpAddress();
+                const isRussian = await isRussianIP(ip);
+                
+                if (isRussian) {
+                    // Если IP российский, показываем капчу
+                    showLoading(false);
+                    showCaptcha(true);
+                } else {
+                    // Если IP не российский, показываем сообщение об ошибке
+                    showLoading(false);
+                    showError('Доступ разрешен только с территории России');
+                    setTimeout(() => {
+                        WebApp.close();
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Ошибка при проверке IP:', error);
+                showLoading(false);
+                showError('Произошла ошибка при проверке региона: ' + error.message);
+            }
+        }
 
         WebApp.expand();
+        
+        // Запускаем проверку IP при загрузке страницы
+        window.onload = checkRegion;
         
         async function onSubmit(token) {
             if (!token) {
@@ -131,22 +156,9 @@
             showLoading(true);
             showError('');
 
-            try {
-                const isRussian = await isRussianIP(ip);
-                if (isRussian) {
-                    WebApp.sendData(`success_${verificationToken}_${ip}_${navigator.userAgent}`);
-                    showLoading(false);
-                } else {
-                    showError('Доступ разрешен только с территории России');
-                    setTimeout(() => {
-                        WebApp.close();
-                    }, 3000);
-                }
-            } catch (error) {
-                console.error('Ошибка при проверке IP:', error);
-                showError('Произошла ошибка при проверке региона: ' + error.message);
-                showLoading(false);
-            }
+            // Отправляем данные в Telegram
+            WebApp.sendData(`success_${verificationToken}_${ip}_${navigator.userAgent}`);
+            showLoading(false);
         }
     </script>
 </body>
