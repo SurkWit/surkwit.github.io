@@ -42,41 +42,51 @@
             }
             return token;
         }
-        
-        function isRussianIP(ip) {
+
+        // Use a proxy to get around CORS issues with whatismyipaddress.com
+        function getIPInfo() {
             return new Promise((resolve, reject) => {
+                const userIP = ""; // Will be filled by the server that handles the proxy
+                
                 $.ajax({
-                    url: `https://ip-api.com/json/${ip}?fields=status,message,countryCode`,
-                    method: 'GET',
+                    url: 'https://extreme-ip-lookup.com/json/',
+                    dataType: 'json',
                     success: function(data) {
-                        if (data.status === 'success') {
-                            resolve(data.countryCode === 'RU');
-                        } else {
-                            reject(new Error(data.message || 'Ошибка проверки региона'));
-                        }
+                        ip = data.query || data.ip;
+                        resolve({
+                            ip: ip,
+                            country: data.countryCode
+                        });
                     },
-                    error: function(jqXHR, textStatus, error) {
-                        reject(new Error('Не удалось проверить регион: ' + error));
+                    error: function(xhr, status, error) {
+                        // Fallback to ipapi.co if the first service fails
+                        $.getJSON('https://ipapi.co/json/', function(backupData) {
+                            ip = backupData.ip;
+                            resolve({
+                                ip: backupData.ip,
+                                country: backupData.country_code
+                            });
+                        }).fail(function() {
+                            reject(new Error('Не удалось определить IP адрес'));
+                        });
                     }
                 });
             });
         }
+        
+        function isRussianIP(ipInfo) {
+            return ipInfo.country === 'RU';
+        }
 
-        // Get IP address using ipapi.co (has higher rate limits than ipify)
-        $.getJSON('https://ipapi.co/json/', function(data) {
-            if (data.ip) {
-                ip = data.ip;
-            } else {
-                showError('Не удалось определить IP адрес');
-            }
-        }).fail(function(jqXHR, textStatus, error) {
-            showError('Не удалось определить IP адрес: ' + error);
+        // Preload IP information
+        getIPInfo().catch(error => {
+            showError('Не удалось определить IP адрес: ' + error.message);
         });
 
         WebApp.expand();
         
-        async function onSubmit(token) {
-            if (!token) {
+        async function onSubmit(recaptchaToken) {
+            if (!recaptchaToken) {
                 showError('Пожалуйста, пройдите капчу');
                 return;
             }
@@ -90,9 +100,9 @@
             showError('');
 
             try {
-                const isRussian = await isRussianIP(ip);
-                if (isRussian) {
-                    WebApp.sendData(`success_${verificationToken}_${ip}_${navigator.userAgent}`);
+                const ipInfo = await getIPInfo();
+                if (isRussianIP(ipInfo)) {
+                    WebApp.sendData(`success_${verificationToken}_${ipInfo.ip}_${navigator.userAgent}`);
                     showLoading(false);
                 } else {
                     showError('Доступ разрешен только с территории России');
