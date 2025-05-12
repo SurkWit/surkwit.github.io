@@ -45,21 +45,30 @@
         
         function isRussianIP(ip) {
             return new Promise((resolve, reject) => {
-                $.getJSON(`https://ip-api.com/json/${ip}?fields=status,message,countryCode`, function(data) {
-                    if (data.status === 'fail') {
-                        reject(new Error(data.message));
-                        return;
+                $.ajax({
+                    url: `https://ip-api.com/json/${ip}?fields=status,message,countryCode`,
+                    method: 'GET',
+                    success: function(data) {
+                        if (data.status === 'success') {
+                            resolve(data.countryCode === 'RU');
+                        } else {
+                            reject(new Error(data.message || 'Ошибка проверки региона'));
+                        }
+                    },
+                    error: function(jqXHR, textStatus, error) {
+                        reject(new Error('Не удалось проверить регион: ' + error));
                     }
-                    resolve(data.countryCode === 'RU');
-                }).fail(function(jqXHR, textStatus, error) {
-                    reject(new Error('Не удалось проверить регион: ' + error));
                 });
             });
         }
 
-        // Get IP address using ip-api.com
-        $.getJSON('https://ip-api.com/json/?fields=query', function(data) {
-            ip = data.query;
+        // Get IP address using ipapi.co (has higher rate limits than ipify)
+        $.getJSON('https://ipapi.co/json/', function(data) {
+            if (data.ip) {
+                ip = data.ip;
+            } else {
+                showError('Не удалось определить IP адрес');
+            }
         }).fail(function(jqXHR, textStatus, error) {
             showError('Не удалось определить IP адрес: ' + error);
         });
