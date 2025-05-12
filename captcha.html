@@ -8,17 +8,21 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <script src="config.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>Проверка безопасности</h1>
         <p>Для продолжения общения в чате, пожалуйста, пройдите проверку ниже</p>
-        <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-callback="onSubmit"></div>
+        <div class="g-recaptcha" data-sitekey="" data-callback="onSubmit"></div>
         <div id="error-message" style="color: red; margin-top: 10px; display: none;">
             Доступ разрешен только с территории России
         </div>
     </div>
     <script>
+        // Set reCAPTCHA site key from config
+        document.querySelector('.g-recaptcha').setAttribute('data-sitekey', config.RECAPTCHA_SITE_KEY);
+        
         var WebApp = window.Telegram.WebApp;
         var ip;
         

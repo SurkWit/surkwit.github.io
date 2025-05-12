@@ -1,0 +1,3 @@
+const config = {
+    RECAPTCHA_SITE_KEY: 'YOUR_RECAPTCHA_SITE_KEY_HERE'
+}; 
