@@ -42,51 +42,78 @@
             }
             return token;
         }
-
-        // Use a proxy to get around CORS issues with whatismyipaddress.com
-        function getIPInfo() {
+        
+        function isRussianIP(ipAddress) {
             return new Promise((resolve, reject) => {
-                const userIP = ""; // Will be filled by the server that handles the proxy
-                
-                $.ajax({
-                    url: 'https://extreme-ip-lookup.com/json/',
-                    dataType: 'json',
-                    success: function(data) {
-                        ip = data.query || data.ip;
-                        resolve({
-                            ip: ip,
-                            country: data.countryCode
+                // Используем прокси-сервер для обхода CORS
+                fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://whatismyipaddress.com/ip/${ipAddress}`)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        // Извлекаем содержимое страницы
+                        const pageContent = data.contents;
+                        
+                        // Ищем информацию о стране в HTML
+                        if (pageContent.includes('<span>Country:</span><span>Russia</span>') || 
+                            pageContent.includes('<span>Country:</span><span>Russian Federation</span>')) {
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking IP:', error);
+                        // Используем резервный API при ошибке
+                        $.getJSON('https://ipapi.co/' + ipAddress + '/json/', function(backupData) {
+                            if (backupData.error) {
+                                reject(new Error(backupData.error));
+                                return;
+                            }
+                            resolve(backupData.country_code === 'RU');
+                        }).fail(function(backupJqXHR, backupTextStatus, backupError) {
+                            reject(new Error('Не удалось проверить регион: ' + error));
                         });
-                    },
-                    error: function(xhr, status, error) {
-                        // Fallback to ipapi.co if the first service fails
-                        $.getJSON('https://ipapi.co/json/', function(backupData) {
-                            ip = backupData.ip;
-                            resolve({
-                                ip: backupData.ip,
-                                country: backupData.country_code
-                            });
-                        }).fail(function() {
-                            reject(new Error('Не удалось определить IP адрес'));
-                        });
-                    }
-                });
+                    });
             });
         }
-        
-        function isRussianIP(ipInfo) {
-            return ipInfo.country === 'RU';
+
+        // Get IP address
+        function getIpAddress() {
+            return new Promise((resolve, reject) => {
+                // Используем XML HTTP Request для обхода ограничений
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', 'https://api.ipify.org', true);
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        resolve(xhr.responseText.trim());
+                    } else {
+                        reject(new Error('Не удалось получить IP адрес'));
+                    }
+                };
+                xhr.onerror = function() {
+                    // Резервный метод получения IP
+                    $.getJSON('https://api.db-ip.com/v2/free/self', function(backupData) {
+                        resolve(backupData.ipAddress);
+                    }).fail(function() {
+                        reject(new Error('Не удалось определить IP адрес'));
+                    });
+                };
+                xhr.send();
+            });
         }
 
-        // Preload IP information
-        getIPInfo().catch(error => {
-            showError('Не удалось определить IP адрес: ' + error.message);
-        });
+        // Инициализируем получение IP адреса
+        getIpAddress()
+            .then(ipAddress => {
+                ip = ipAddress;
+            })
+            .catch(error => {
+                showError(error.message);
+            });
 
         WebApp.expand();
         
-        async function onSubmit(recaptchaToken) {
-            if (!recaptchaToken) {
+        async function onSubmit(token) {
+            if (!token) {
                 showError('Пожалуйста, пройдите капчу');
                 return;
             }
@@ -96,13 +123,18 @@
                 return;
             }
 
+            if (!ip) {
+                showError('Не удалось определить IP адрес');
+                return;
+            }
+
             showLoading(true);
             showError('');
 
             try {
-                const ipInfo = await getIPInfo();
-                if (isRussianIP(ipInfo)) {
-                    WebApp.sendData(`success_${verificationToken}_${ipInfo.ip}_${navigator.userAgent}`);
+                const isRussian = await isRussianIP(ip);
+                if (isRussian) {
+                    WebApp.sendData(`success_${verificationToken}_${ip}_${navigator.userAgent}`);
                     showLoading(false);
                 } else {
                     showError('Доступ разрешен только с территории России');
